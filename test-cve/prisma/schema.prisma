@@ -1,0 +1,255 @@
+// schema.prisma
+generator client {
+  provider = "prisma-client-py"
+  interface = "asyncio"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// sert a verifier si les donnees de kev sont deja remplir avant de lancer le cron job pour le remplissage de cve depuis l'api exterene
+model CronStatus {
+  id     String   @id @default(cuid())
+  statut String?   // "actif", "inactif"
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Index
+  @@index([statut])
+}
+
+model CVE {
+  // ID auto-généré pour les relations internes
+  id                String    @id @default(cuid())
+  // Identifiant unique du CVE (CVE-2024-12345)
+  cveId             String    @unique
+  
+  sourceIdentifier  String?
+  url               String?
+  published         DateTime?
+  lastModified      DateTime?
+  vulnStatus        String?
+  
+  // Vecteurs CVSS
+  v31vector         String?
+  v30vector         String?
+  v2vector          String?
+  v31exploitability Float?
+  v30exploitability Float?
+  v2exploitability  Float?
+  v31impactScore    Float?
+  v30impactScore    Float?
+  v2impactScore     Float?
+  
+  // Métriques d'attaque
+  v31attackVector        String?
+  v30attackVector        String?
+  v2accessVector         String?
+  v31attackComplexity    String?
+  v30attackComplexity    String?
+  v2accessComplexity     String?
+  v31confidentialityImpact String?
+  v30confidentialityImpact String?
+  v2confidentialityImpact String?
+  v31integrityImpact     String?
+  v30integrityImpact     String?
+  v2integrityImpact      String?
+  v31availabilityImpact  String?
+  v30availabilityImpact  String?
+  v2availabilityImpact   String?
+  
+  // Relations
+  descriptions      Description[]
+  references        Reference[]
+  cwe               CWE[]
+  cpe               CPE[]
+  metrics           Metric[]
+  kevInfo           KEV?          @relation(fields: [kevCveId], references: [cveId], onDelete: Cascade)
+  kevCveId          String?       @unique
+  profileTags       ProfileTag[]
+  evidence          Evidence[]
+  
+  // Champs calculés/enrichis
+  isExploited       Boolean       @default(false)
+  epss_score        Float?        @default(0.0)
+  epss_percentile   Float?        @default(0.0)
+  exploit_public    Boolean       @default(false)
+  confidenceLevel   String?
+  activelyExploited Boolean       @default(false)
+  profileTitle      String?
+  profileDescription String?      @db.Text
+  profileSynthScore Int?
+  
+  // Timestamps
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  
+  // Indexes
+  @@index([cveId])
+  @@index([published])
+  @@index([lastModified])
+  @@index([vulnStatus])
+  @@index([isExploited])
+  @@index([exploit_public])
+  @@index([confidenceLevel])
+  @@index([profileSynthScore])
+  @@index([epss_score])
+}
+
+model Description {
+  id      String   @id @default(cuid())
+  lang    String
+  value   String   @db.Text
+  cveId   String   // Référence à l'ID auto-généré du CVE
+  
+  cve     CVE      @relation(fields: [cveId], references: [id], onDelete: Cascade)
+  
+  @@unique([cveId, lang])
+  @@index([cveId])
+}
+
+model Reference {
+  id      String   @id @default(cuid())
+  url     String
+  cveId   String   // Référence à l'ID auto-généré du CVE
+  
+  cve     CVE      @relation(fields: [cveId], references: [id], onDelete: Cascade)
+  tags    Tag[]
+  
+  @@index([cveId])
+  @@index([url])
+}
+
+model Tag {
+  id          String   @id @default(cuid())
+  name        String
+  referenceId String
+  
+  reference   Reference @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+  
+  @@unique([referenceId, name])
+  @@index([referenceId])
+}
+
+model CWE {
+  id      String   @id @default(cuid())
+  lang    String
+  value   String
+  cveId   String   // Référence à l'ID auto-généré du CVE
+  
+  cve     CVE      @relation(fields: [cveId], references: [id], onDelete: Cascade)
+  
+  @@unique([cveId, value])
+  @@index([cveId])
+}
+
+model CPE {
+  id                  String   @id @default(cuid())
+  vulnerable          Boolean  @default(false)
+  criteria            String?
+  versionEndExcluding String?
+  matchCriteriaId     String?
+  cveId               String   // Référence à l'ID auto-généré du CVE
+  
+  cve                 CVE      @relation(fields: [cveId], references: [id], onDelete: Cascade)
+  
+  @@index([cveId])
+  @@index([vulnerable])
+  @@index([criteria])
+}
+
+model Metric {
+  id          String   @id @default(cuid())
+  metricType  String   // "V31", "V30", "V2"
+  score       Float?
+  severity    String?
+  cveId       String   // Référence à l'ID auto-généré du CVE
+  
+  cve         CVE      @relation(fields: [cveId], references: [id], onDelete: Cascade)
+  
+  @@unique([cveId, metricType])
+  @@index([cveId])
+  @@index([metricType])
+  @@index([severity])
+  @@index([score])
+}
+
+model KEV {
+  // Utilise cveId comme ID primaire (pas d'ID auto-généré)
+  cveId                      String   @id @unique
+  vendorProject              String?
+  product                    String?
+  vulnerabilityName          String?
+  dateAdded                  DateTime?
+  shortDescription           String?   @db.Text
+  requiredAction             String?   @db.Text
+  dueDate                    DateTime?
+  knownRansomwareCampaignUse String?
+  notes                      String?   @db.Text
+  
+  // Relation 1:1 avec CVE via cveId
+  cve                        CVE?     @relation(fields: [cveId], references: [cveId], onDelete: Cascade)
+  cwes                       KEV_CWE[]
+  
+  // Timestamps
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  
+  // Indexes
+  @@index([vendorProject])
+  @@index([product])
+  @@index([dateAdded])
+  @@index([dueDate])
+  @@index([knownRansomwareCampaignUse])
+}
+
+model KEV_CWE {
+  id      String   @id @default(cuid())
+  value   String
+  kevId   String   // Référence au cveId du KEV
+  
+  kev     KEV      @relation(fields: [kevId], references: [cveId], onDelete: Cascade)
+  
+  @@unique([kevId, value])
+  @@index([kevId])
+}
+
+model ProfileTag {
+  id      String   @id @default(cuid())
+  tag     String
+  cveId   String   // Référence à l'ID auto-généré du CVE
+  
+  cve     CVE      @relation(fields: [cveId], references: [id], onDelete: Cascade)
+  
+  @@unique([cveId, tag])
+  @@index([cveId])
+  @@index([tag])
+}
+
+model Evidence {
+  id          String   @id @default(cuid())
+  source      String?
+  url         String?
+  stars       Int?
+  createdAt   DateTime?
+  type        String?
+  name        String?
+  permalink   String?
+  score       Int?
+  nbr_comment Int?
+  title       String?  @db.Text
+  created_utc BigInt?
+  cveId       String   // Référence à l'ID auto-généré du CVE
+  
+  cve         CVE      @relation(fields: [cveId], references: [id], onDelete: Cascade)
+  
+  @@index([cveId])
+  @@index([source])
+  @@index([type])
+  @@index([createdAt])
+  @@index([created_utc])
+}

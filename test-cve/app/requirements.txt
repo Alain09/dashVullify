@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+nvdlib==0.8.3
+python-multipart
+httpx>=0.24.0
+asyncpraw
+python-dotenv
+redis

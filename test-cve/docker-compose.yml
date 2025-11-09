@@ -1,0 +1,40 @@
+
+
+services:
+  fastapi:
+    build: .
+    container_name: cve-fastapi
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
+      - REDDIT_USER_AGENT=${REDDIT_USER_AGENT}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - API_KEY=${API_KEY}
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - cve-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: cve-redis
+
+    volumes:
+      - redis_data:/data
+
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - cve-network
+
+volumes:
+  redis_data:
+
+networks:
+  cve-network:
+    driver: bridge
